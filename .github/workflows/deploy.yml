@@ -17,6 +17,7 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-                    cd expense-tracker-mcp-server && \
-                    git pull origin main && \
-                    docker compose up -d --build
+                      cd expense-tracker-mcp-server
+                      git fetch origin
+                      git reset --hard origin/main
+                      docker compose up -d --build
