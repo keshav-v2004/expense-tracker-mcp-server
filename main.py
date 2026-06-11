@@ -329,24 +329,16 @@ def category_breakdown(month: str) -> dict:
     return {row["category"]: float(row["total"]) for row in rows}
 
 # -----------------------------------------------------------------------------
-# 5. LIFESPAN BOUNDS & FAST MCP HTTP APP
+# 5. LIFESPAN BOUNDS
 # -----------------------------------------------------------------------------
-# 1. Initialize the ASGI app from FastMCP FIRST so we can access its lifespan
-mcp_asgi_app = mcp.http_app()
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 2. Boot Database
+    # Boot Database
     db_pool.open()
     init_db()
     print("🚀 Database pool operational and Multi-Tenant schemas verified.")
-    
-    # 3. Boot FastMCP internal SSE task groups (CRITICAL FOR STREAMING)
-    async with mcp_asgi_app.router.lifespan_context(app):
-        print("🚀 FastMCP Streamable Transport operational.")
-        yield
-        
-    # 4. Shutdown Database
+    yield
+    # Shutdown Database
     db_pool.close()
     print("🛑 Database pools terminated.")
 
@@ -375,10 +367,12 @@ async def test_auth_context():
 app.add_middleware(Auth0MultiTenantMiddleware, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE)
 
 # Mount Redis Rate Limiter (Runs before Auth0)
-app.add_middleware(RedisRateLimitMiddleware, max_requests=5, window_seconds=30) 
+app.add_middleware(RedisRateLimitMiddleware, max_requests=2, window_seconds=30) 
 
-# Mount the INITIALIZED app instance to the FastAPI router
-app.mount("/mcp", mcp_asgi_app)
+# --- THE MAGIC FIX: Natively attach FastMCP to FastAPI ---
+# This explicitly creates the /sse and /messages endpoints on the main app
+# guaranteeing the URLs for the inspector.
+mcp.attach_to_fastapi(app, sse_path="/sse", messages_path="/messages")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
