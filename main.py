@@ -329,15 +329,22 @@ def category_breakdown(month: str) -> dict:
     return {row["category"]: float(row["total"]) for row in rows}
 
 # -----------------------------------------------------------------------------
-# 5. LIFESPAN BOUNDS
+# 5. LIFESPAN BOUNDS & FAST MCP HTTP APP
 # -----------------------------------------------------------------------------
+mcp_asgi_app = mcp.http_app()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Boot Database
     db_pool.open()
     init_db()
     print("🚀 Database pool operational and Multi-Tenant schemas verified.")
-    yield
+    
+    # Boot FastMCP internal tasks (CRITICAL FOR STREAMING)
+    async with mcp_asgi_app.router.lifespan_context(app):
+        print("🚀 FastMCP Streamable Transport operational.")
+        yield
+        
     # Shutdown Database
     db_pool.close()
     print("🛑 Database pools terminated.")
@@ -369,10 +376,10 @@ app.add_middleware(Auth0MultiTenantMiddleware, domain=AUTH0_DOMAIN, audience=AUT
 # Mount Redis Rate Limiter (Runs before Auth0)
 app.add_middleware(RedisRateLimitMiddleware, max_requests=2, window_seconds=30) 
 
-# --- THE MAGIC FIX: Natively attach FastMCP to FastAPI ---
-# This explicitly creates the /sse and /messages endpoints on the main app
-# guaranteeing the URLs for the inspector.
-mcp.attach_to_fastapi(app, sse_path="/sse", messages_path="/messages")
+# Mount the MCP ASGI App at the root wildcard.
+# This prevents Starlette from stripping the path, allowing 
+# FastMCP to receive exactly "/mcp" and route it correctly!
+app.mount("/", mcp_asgi_app)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
