@@ -469,9 +469,13 @@ def category_breakdown(month: str) -> dict:
 # -----------------------------------------------------------------------------
 app = FastAPI(title="Enterprise Multi-Tenant Expense MCP", lifespan=lifespan)
 
-@app.get("/health", tags=["Infrastructure"])
+@app.get("/health")
 async def health_check():
-    return {"status": "healthy", "tenancy": "ContextVar Isolation Active"}
+    return {
+        "status": "production automated!", 
+        "tenancy": "ContextVar Isolation Active",
+        "version": "1.0.0" # Added this line for verification purposes
+    }
 
 
 @app.get("/test-auth", tags=["Infrastructure"])
