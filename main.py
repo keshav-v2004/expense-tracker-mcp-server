@@ -374,7 +374,7 @@ async def test_auth_context():
 app.add_middleware(Auth0MultiTenantMiddleware, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE)
 
 # Mount Redis Rate Limiter (Runs before Auth0)
-app.add_middleware(RedisRateLimitMiddleware, max_requests=2, window_seconds=30) 
+app.add_middleware(RedisRateLimitMiddleware, max_requests=60, window_seconds=30) 
 
 # Mount the MCP ASGI App at the root wildcard.
 # This prevents Starlette from stripping the path, allowing 
