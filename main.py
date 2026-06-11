@@ -214,37 +214,9 @@ class RedisRateLimitMiddleware:
 
 
 # -----------------------------------------------------------------------------
-# 4. LIFESPAN BOUNDS
-# -----------------------------------------------------------------------------
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    db_pool.open()
-    init_db()
-    print("🚀 Database pool operational and Multi-Tenant schemas verified.")
-    yield
-    db_pool.close()
-    print("🛑 Database pools terminated.")
-
-
-
-
-# -----------------------------------------------------------------------------
-# 5. MCP IMPLEMENTATION WITH SCOPED DATA LEASE
+# 4. MCP IMPLEMENTATION WITH SCOPED DATA LEASE 
 # -----------------------------------------------------------------------------
 mcp = FastMCP("expense_tracker_mcp_server")
-
-# @mcp.tool
-# def add_expense(amount: float, category: str, subcategory: str, date: str, note: str = "") -> str:
-#     """Adds a new expense to the tenant space."""
-#     tenant_id = tenant_context.get()
-#     with get_db_connection() as conn:
-#         with conn.cursor() as cursor:
-#             cursor.execute("""
-#                 INSERT INTO expenses (tenant_id, amount, category, subcategory, date, note)
-#                 VALUES (%s, %s, %s, %s, %s, %s)
-#             """, (tenant_id, amount, category, subcategory, date, note))
-#         conn.commit()
-#     return "Expense added securely."
 
 @mcp.tool
 def add_expense(amount: float, category: str, subcategory: str, date: str, note: str = "") -> str:
@@ -258,48 +230,17 @@ def add_expense(amount: float, category: str, subcategory: str, date: str, note:
         conn.commit()
     return "Expense added securely."
 
-
-# @mcp.tool
-# def list_expenses() -> List[dict]:
-#     """Lists all expenses bound strictly to the authenticated tenant."""
-#     tenant_id = tenant_context.get()
-#     with get_db_connection() as conn:
-#         with conn.cursor() as cursor:
-#             cursor.execute("""
-#                 SELECT id, amount, category, subcategory, date, note 
-#                 FROM expenses WHERE tenant_id = %s
-#             """, (tenant_id,))
-#             expenses = cursor.fetchall()
-#             for exp in expenses:
-#                 exp["amount"] = float(exp["amount"])
-#                 exp["date"] = exp["date"].isoformat()
-#     return expenses
-
 @mcp.tool
 def list_expenses() -> List[dict]:
     """Lists expenses. PostgreSQL RLS automatically filters out other users' data."""
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
-            
-            
             cursor.execute("SELECT id, amount, category, subcategory, date, note FROM expenses")
             expenses = cursor.fetchall()
             for exp in expenses:
                 exp["amount"] = float(exp["amount"])
                 exp["date"] = exp["date"].isoformat()
     return expenses
-
-# @mcp.tool
-# def delete_expense(expense_id: int) -> str:
-#     """Deletes an expense record after enforcing tenant data boundaries."""
-#     tenant_id = tenant_context.get()
-#     with get_db_connection() as conn:
-#         with conn.cursor() as cursor:
-#             cursor.execute("""
-#                 DELETE FROM expenses WHERE id = %s AND tenant_id = %s
-#             """, (expense_id, tenant_id))
-#         conn.commit()
-#     return "Expense deleted successfully if record existed."
 
 @mcp.tool
 def delete_expense(expense_id: int) -> str:
@@ -311,23 +252,6 @@ def delete_expense(expense_id: int) -> str:
             """, (expense_id,))
         conn.commit()
     return "Expense deleted successfully if record existed."
-
-
-# @mcp.tool
-# def update_expense(
-#     expense_id: int, amount: float, category: str, subcategory: str, date: str, note: str = ""
-# ) -> str:
-#     """Update an existing expense record checking tenant bounds."""
-#     tenant_id = tenant_context.get()
-#     with get_db_connection() as conn:
-#         with conn.cursor() as cursor:
-#             cursor.execute("""
-#                 UPDATE expenses
-#                 SET amount = %s, category = %s, subcategory = %s, date = %s, note = %s
-#                 WHERE id = %s AND tenant_id = %s
-#             """, (amount, category, subcategory, date, note, expense_id, tenant_id))
-#         conn.commit()
-#     return "Expense updated successfully."
 
 @mcp.tool
 def update_expense(
@@ -344,24 +268,6 @@ def update_expense(
         conn.commit()
     return "Expense updated successfully."
 
-
-
-# @mcp.tool
-# def get_expenses_by_category(category: str) -> List[dict]:
-#     """Get expenses filtered by category within tenant bounds."""
-#     tenant_id = tenant_context.get()
-#     with get_db_connection() as conn:
-#         with conn.cursor() as cursor:
-#             cursor.execute("""
-#                 SELECT id, amount, category, subcategory, date, note
-#                 FROM expenses WHERE category = %s AND tenant_id = %s
-#             """, (category, tenant_id))
-#             expenses = cursor.fetchall()
-#             for exp in expenses:
-#                 exp["amount"] = float(exp["amount"])
-#                 exp["date"] = exp["date"].isoformat()
-#     return expenses
-
 @mcp.tool
 def get_expenses_by_category(category: str) -> List[dict]:
     """Gets expenses filtered by category. PostgreSQL RLS automatically filters records by tenant."""
@@ -377,22 +283,6 @@ def get_expenses_by_category(category: str) -> List[dict]:
                 exp["amount"] = float(exp["amount"])
                 exp["date"] = exp["date"].isoformat()
     return expenses
-
-# @mcp.tool
-# def get_expenses_by_date(start_date: str, end_date: str) -> List[dict]:
-#     """Get expenses registered between two dates inside tenant space."""
-#     tenant_id = tenant_context.get()
-#     with get_db_connection() as conn:
-#         with conn.cursor() as cursor:
-#             cursor.execute("""
-#                 SELECT id, amount, category, subcategory, date, note
-#                 FROM expenses WHERE date BETWEEN %s AND %s AND tenant_id = %s ORDER BY date
-#             """, (start_date, end_date, tenant_id))
-#             expenses = cursor.fetchall()
-#             for exp in expenses:
-#                 exp["amount"] = float(exp["amount"])
-#                 exp["date"] = exp["date"].isoformat()
-#     return expenses
 
 @mcp.tool
 def get_expenses_by_date(start_date: str, end_date: str) -> List[dict]:
@@ -411,19 +301,6 @@ def get_expenses_by_date(start_date: str, end_date: str) -> List[dict]:
                 exp["date"] = exp["date"].isoformat()
     return expenses
 
-# @mcp.tool
-# def monthly_summary(month: str) -> dict:
-#     """Get total amount spent during a specific month inside tenant space."""
-#     tenant_id = tenant_context.get()
-#     with get_db_connection() as conn:
-#         with conn.cursor() as cursor:
-#             cursor.execute("""
-#                 SELECT COALESCE(SUM(amount), 0) FROM expenses
-#                 WHERE to_char(date, 'YYYY-MM') = %s AND tenant_id = %s
-#             """, (month, tenant_id))
-#             total = cursor.fetchone()[0]
-#     return {"month": month, "total_spent": float(total)}
-
 @mcp.tool
 def monthly_summary(month: str) -> dict:
     """Gets total spending for a month. PostgreSQL RLS automatically limits aggregation to authorized records."""
@@ -436,19 +313,6 @@ def monthly_summary(month: str) -> dict:
             """, (month,))
             total = cursor.fetchone()[0]
     return {"month": month, "total_spent": float(total)}
-
-# @mcp.tool
-# def category_breakdown(month: str) -> dict:
-#     """Get spending grouped by category for a specific month inside tenant space."""
-#     tenant_id = tenant_context.get()
-#     with get_db_connection() as conn:
-#         with conn.cursor() as cursor:
-#             cursor.execute("""
-#                 SELECT category, COALESCE(SUM(amount), 0) as total FROM expenses
-#                 WHERE to_char(date, 'YYYY-MM') = %s AND tenant_id = %s GROUP BY category
-#             """, (month, tenant_id))
-#             rows = cursor.fetchall()
-#     return {row["category"]: float(row["total"]) for row in rows}
 
 @mcp.tool
 def category_breakdown(month: str) -> dict:
@@ -465,6 +329,28 @@ def category_breakdown(month: str) -> dict:
     return {row["category"]: float(row["total"]) for row in rows}
 
 # -----------------------------------------------------------------------------
+# 5. LIFESPAN BOUNDS & FAST MCP HTTP APP
+# -----------------------------------------------------------------------------
+# 1. Initialize the ASGI app from FastMCP FIRST so we can access its lifespan
+mcp_asgi_app = mcp.http_app()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 2. Boot Database
+    db_pool.open()
+    init_db()
+    print("🚀 Database pool operational and Multi-Tenant schemas verified.")
+    
+    # 3. Boot FastMCP internal SSE task groups (CRITICAL FOR STREAMING)
+    async with mcp_asgi_app.router.lifespan_context(app):
+        print("🚀 FastMCP Streamable Transport operational.")
+        yield
+        
+    # 4. Shutdown Database
+    db_pool.close()
+    print("🛑 Database pools terminated.")
+
+# -----------------------------------------------------------------------------
 # 6. APPLICATION ROUTING AND MIDDLEWARE BINDINGS
 # -----------------------------------------------------------------------------
 app = FastAPI(title="Enterprise Multi-Tenant Expense MCP", lifespan=lifespan)
@@ -474,13 +360,11 @@ async def health_check():
     return {
         "status": "production automated!", 
         "tenancy": "ContextVar Isolation Active",
-        "version": "1.0.0" # Added this line for verification purposes
+        "version": "1.0.0" 
     }
-
 
 @app.get("/test-auth", tags=["Infrastructure"])
 async def test_auth_context():
-    """A standard REST endpoint to verify the middleware is extracting the tenant ID."""
     tenant_id = tenant_context.get()
     return {
         "message": "Authentication Successful!",
@@ -491,11 +375,10 @@ async def test_auth_context():
 app.add_middleware(Auth0MultiTenantMiddleware, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE)
 
 # Mount Redis Rate Limiter (Runs before Auth0)
-app.add_middleware(RedisRateLimitMiddleware, max_requests=2, window_seconds=30) 
+app.add_middleware(RedisRateLimitMiddleware, max_requests=5, window_seconds=30) 
 
-
-# Mount the MCP Engine under protected scope
-app.mount("/mcp", mcp.http_app)
+# Mount the INITIALIZED app instance to the FastAPI router
+app.mount("/mcp", mcp_asgi_app)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
