@@ -14,6 +14,9 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from dotenv import load_dotenv
 import redis.asyncio as redis
 
+from fastapi.responses import HTMLResponse
+
+
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -69,6 +72,9 @@ def init_db():
             """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_expenses_tenant_id ON expenses (tenant_id)")
             cursor.execute("ALTER TABLE expenses ENABLE ROW LEVEL SECURITY")
+
+            cursor.execute("ALTER TABLE expenses FORCE ROW LEVEL SECURITY")
+
             cursor.execute("DROP POLICY IF EXISTS tenant_isolation_policy ON expenses")
             cursor.execute("""
                 CREATE POLICY tenant_isolation_policy ON expenses 
@@ -87,7 +93,7 @@ class Auth0MultiTenantMiddleware:
         self.jwks_client = jwt.PyJWKClient(f"{self.issuer}.well-known/jwks.json", lifespan=3600)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope["path"] == "/health" or scope.get("method") == "OPTIONS":
+        if scope["type"] != "http" or scope["path"] in ["/health", "/token", "/favicon.ico"] or scope.get("method") == "OPTIONS":
             await self.app(scope, receive, send)
             return
 
@@ -295,6 +301,53 @@ async def lifespan(app: FastAPI):
 # 7. APPLICATION ROUTING AND MIDDLEWARE BINDINGS
 # -----------------------------------------------------------------------------
 app = FastAPI(title="Enterprise Multi-Tenant Expense Tracker", lifespan=lifespan)
+
+@app.get("/token", tags=["Developer Portal"])
+async def get_token_portal():
+    """Portal for developers to securely extract their Auth0 token."""
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Expense Tracker MCP - Auth</title>
+        <style>
+            body { font-family: system-ui, sans-serif; background: #111827; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+            .card { background: #1f2937; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.5); max-width: 600px; width: 100%; text-align: center; border: 1px solid #374151; }
+            .token-box { background: #000; color: #10b981; padding: 1rem; border-radius: 4px; word-break: break-all; font-family: monospace; margin: 1.5rem 0; text-align: left; max-height: 200px; overflow-y: auto; }
+            .btn { background: #3b82f6; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h2>Your MCP Developer Token</h2>
+            <p>Copy this Bearer Token and paste it into your <b>.env</b> file.</p>
+            <div class="token-box" id="tokenDisplay">Extracting token from URL...</div>
+            <button class="btn" onclick="copyToken()">Copy to Clipboard</button>
+        </div>
+        <script>
+            function copyToken() {
+                navigator.clipboard.writeText(document.getElementById('tokenDisplay').innerText);
+                alert("Token copied! Paste this into your .env file.");
+            }
+            window.onload = function() {
+                // Auth0 passes the token in the URL hash fragment
+                const hash = window.location.hash.substring(1);
+                const params = new URLSearchParams(hash);
+                const token = params.get('access_token');
+                if (token) {
+                    document.getElementById('tokenDisplay').innerText = token;
+                    window.history.replaceState(null, null, window.location.pathname); // Hide token from URL bar
+                } else {
+                    document.getElementById('tokenDisplay').innerText = "Error: No token found. Please login via Auth0 first.";
+                    document.getElementById('tokenDisplay').style.color = "#ef4444";
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
 
 @app.get("/health")
 async def health_check():
