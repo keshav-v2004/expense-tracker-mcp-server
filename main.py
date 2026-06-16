@@ -53,6 +53,10 @@ def get_db_connection():
         if tenant_id:
             # Use set_config to safely parameterize the transaction-local variable
             conn.execute("SELECT set_config('app.current_tenant', %s, true)", (tenant_id,))
+            
+            # --- NEW: Temporarily drop superuser privileges for this transaction ---
+            conn.execute("SET LOCAL ROLE api_user")
+            
         yield conn
 
 def init_db():
@@ -71,8 +75,12 @@ def init_db():
                 )
             """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_expenses_tenant_id ON expenses (tenant_id)")
-            cursor.execute("ALTER TABLE expenses ENABLE ROW LEVEL SECURITY")
 
+            cursor.execute("DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'api_user') THEN CREATE ROLE api_user; END IF; END $$;")
+            cursor.execute("GRANT ALL PRIVILEGES ON TABLE expenses TO api_user")
+            cursor.execute("GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO api_user")
+
+            cursor.execute("ALTER TABLE expenses ENABLE ROW LEVEL SECURITY")
             cursor.execute("ALTER TABLE expenses FORCE ROW LEVEL SECURITY")
 
             cursor.execute("DROP POLICY IF EXISTS tenant_isolation_policy ON expenses")
