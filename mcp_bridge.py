@@ -1,58 +1,40 @@
-import sys
-import asyncio
-import json
-import httpx
-from dotenv import load_dotenv
 import os
-load_dotenv()
+import sys
+from fastmcp import Client
+from fastmcp.client.auth import BearerAuth
+from fastmcp.server import create_proxy
+from dotenv import load_dotenv
+
+# --- BULLETPROOF ENV LOADING ---
+# Forces Python to look for the .env file in the exact same folder as this script
+current_dir = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(current_dir, ".env"))
 
 AWS_IP = os.getenv("AWS_IP")
 AUTH0_TOKEN = os.getenv("AUTH0_TOKEN")
 
 if not AWS_IP or not AUTH0_TOKEN:
-    print("Error: Missing AWS_IP or AUTH0_TOKEN in .env file")
+    # Print to stderr so Claude can read the error without crashing the JSON stream
+    print("Error: Missing AWS_IP or AUTH0_TOKEN in .env file", file=sys.stderr)
     sys.exit(1)
 
-REMOTE_URL = f"http://{AWS_IP}:8000/mcp/mcp" 
+# The exact URL for StreamableHttp FastMCP proxying
+REMOTE_URL = f"http://{AWS_IP}:8000/mcp" 
 
-async def main():
-    headers = {
-        "Authorization": f"Bearer {AUTH0_TOKEN}",
-        "Content-Type": "application/json"
-    }
+try:
+    # 1. Create a FastMCP client that natively handles the StreamableHttp handshake
+    client = Client(
+        REMOTE_URL,
+        auth=BearerAuth(token=AUTH0_TOKEN)
+    )
 
-    # Create a local log file to catch AWS errors
-    with open("bridge_debug.log", "w", encoding="utf-8") as log:
-        log.write("Bridge initialized. Waiting for Claude...\n")
+    # 2. Create the built-in proxy that translates Claude's local STDIO into remote streaming
+    proxy = create_proxy(client, name="AWS Expense Tracker")
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            while True:
-                line = await asyncio.to_thread(sys.stdin.readline)
-                if not line:
-                    break
-                    
-                try:
-                    request = json.loads(line)
-                    log.write(f"-> Sending to AWS: {json.dumps(request)}\n")
-                    log.flush()
-
-                    response = await client.post(REMOTE_URL, json=request, headers=headers)
-                    
-                    log.write(f"<- AWS Response [{response.status_code}]: {response.text}\n")
-                    log.flush()
-
-                    # Only forward successful JSON to Claude
-                    if response.status_code == 200:
-                        sys.stdout.write(json.dumps(response.json()) + "\n")
-                        sys.stdout.flush()
-                    else:
-                        # Prevent Claude from crashing by not sending it the HTTP error
-                        sys.stderr.write(f"HTTP {response.status_code} Error. Check bridge_debug.log\n")
-                        sys.stderr.flush()
-
-                except Exception as e:
-                    log.write(f"!! Exception: {str(e)}\n")
-                    log.flush()
+except Exception as e:
+    print(f"Failed to initialize proxy: {e}", file=sys.stderr)
+    sys.exit(1)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # 3. Run the proxy!
+    proxy.run()
