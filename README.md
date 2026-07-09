@@ -1,0 +1,279 @@
+# Enterprise AWS Expense Tracker (MCP Server)
+
+<p align="center">
+  <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" />
+  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" />
+  <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" />
+  <img src="https://img.shields.io/badge/Auth0-EB5424?style=for-the-badge&logo=auth0&logoColor=white" />
+  <img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white" />
+  <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
+  <img src="https://img.shields.io/badge/Docker%20Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
+  <img src="https://img.shields.io/badge/AWS%20EC2-FF9900?style=for-the-badge&logo=amazon-ec2&logoColor=white" />
+  <img src="https://img.shields.io/badge/Amazon%20AWS-232F3E?style=for-the-badge&logo=amazonaws&logoColor=white" />
+  <img src="https://img.shields.io/badge/FastMCP-4B5563?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/JWT-000000?style=for-the-badge&logo=jsonwebtokens&logoColor=white" />
+</p>
+
+
+A production-grade, highly secure Model Context Protocol (MCP) server built with FastAPI, PostgreSQL, and Auth0.
+
+This project allows developers to connect AI assistants (like Claude Desktop) directly to a cloud database to log, manage, and query financial expenses using natural language. Built with an emphasis on enterprise-grade architecture, this server features mathematically strict Row-Level Security (RLS), stateless JWT authentication, IP-based Redis rate limiting, and an automated Dockerized deployment pipeline.
+
+## Tech Stack
+
+| Category | Technologies |
+|----------|--------------|
+| **Backend** | ![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white) |
+| **Database** | ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white) |
+| **Authentication** | ![Auth0](https://img.shields.io/badge/Auth0-EB5424?logo=auth0&logoColor=white) ![JWT](https://img.shields.io/badge/JWT-000000?logo=jsonwebtokens&logoColor=white) |
+| **Caching & Rate Limiting** | ![Redis](https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white) |
+| **Infrastructure** | ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white) ![Docker Compose](https://img.shields.io/badge/Docker%20Compose-2496ED?logo=docker&logoColor=white) ![AWS EC2](https://img.shields.io/badge/AWS%20EC2-FF9900?logo=amazon-ec2&logoColor=white) |
+| **Protocol** | FastMCP (Model Context Protocol) |
+
+
+
+
+
+# Architecture Deep Dive
+
+This project is built on modern backend paradigms, utilizing a Headless DevTool approach. Here is how the stack operates under the hood:
+
+## 1. The Model Context Protocol (FastMCP)
+
+Claude Desktop cannot make HTTP requests directly to cloud servers for security reasons. It requires local proxy scripts.
+
+We utilize FastMCP to create a local bridge script (`mcp_bridge.py`).
+
+- Claude talks to this local bridge via Standard I/O (STDIO).
+- The bridge securely attaches the user's Auth0 Bearer Token and translates the local conversation into HTTP Server-Sent Events (SSE), communicating directly with the AWS EC2 instance.
+
+---
+
+## 2. Multi-Tenancy & Row-Level Security (RLS)
+
+The database uses a single `expenses` table for all users, but users can never see each other's data. This isolation is enforced at the database kernel level, bypassing application-level filtering entirely.
+
+### ContextVars
+
+When a request hits the server, FastAPI securely stores the user's Auth0 Subject ID in a thread-safe asynchronous `ContextVar`.
+
+### Privilege Dropping
+
+By default, Python connects to PostgreSQL as a superuser. Before executing a query, Python runs:
+
+```sql
+SET LOCAL ROLE api_user
+```
+
+to temporarily strip its own superuser rights.
+
+### RLS Policies
+
+Python injects the user ID into the transaction using:
+
+```sql
+set_config('app.current_tenant', id)
+```
+
+PostgreSQL evaluates the strict `tenant_isolation_policy` and mathematically guarantees only the matching rows are returned or modified.
+
+---
+
+## 3. Stateless Auth0 Authentication & Headless Onboarding
+
+We do not store passwords. We use Auth0 for identity management and stateless JSON Web Tokens (JWT).
+
+### Cryptographic Verification
+
+The `Auth0MultiTenantMiddleware` intercepts every incoming request. It downloads public keys (`jwks.json`) from Auth0 and mathematically verifies the token's signature, audience, and expiration before processing the request.
+
+### Headless Portal
+
+Because this is an API-first DevTool, there is no traditional frontend React app. Users authenticate via Auth0's hosted pages and are instantly redirected to a secure, dark-mode `/token` HTML endpoint generated by FastAPI, where custom Javascript extracts the token for local configuration.
+
+---
+
+## 4. High-Performance Infrastructure
+
+### PostgreSQL Pooling
+
+We use `psycopg_pool` to maintain a persistent connection pool, preventing the latency of establishing a new TCP connection for every database query.
+
+### Redis Rate Limiting
+
+A lightweight Redis container tracks request velocity by client IP address. The custom middleware automatically blocks traffic with a `429 Too Many Requests` error if a user exceeds 60 requests in a 30-second window.
+
+### Dockerized Deployment
+
+The entire stack (FastAPI, Postgres, Redis) is orchestrated via Docker Compose on an AWS EC2 instance, ensuring environment parity from development to production.
+
+---
+
+# End-User Guide: Connecting Claude Desktop
+
+If you want to use this Expense Tracker from your local Claude Desktop app, follow these steps to authenticate and configure your bridge.
+
+## Step 1: Get Your Auth0 Token
+
+You need a secure token to identify your transactions in the cloud database.
+
+1. Click this link to log in:
+
+   **Login to Auth0 / Generate Token**
+
+   *(Maintainer Note: Replace placeholders with your actual domain/client ID/AWS IP)*
+
+2. Log in using your email or Google account.
+3. You will be redirected to the developer portal.
+4. Click **Copy to Clipboard** to save your new Bearer token.
+
+---
+
+## Step 2: Setup the Local Bridge Environment
+
+Download the `mcp_bridge.py` file from this repository to your local machine. You must configure a Virtual Environment (`venv`) to run it cleanly.
+
+Open your terminal in the folder where you saved the script.
+
+Create and activate a Python virtual environment:
+
+```bash
+# Create the virtual environment
+python -m venv .venv
+
+# Activate on Windows:
+.venv\Scripts\activate
+
+# Activate on Mac/Linux:
+source .venv/bin/activate
+```
+
+Install the required bridge libraries:
+
+```bash
+pip install fastmcp python-dotenv
+```
+
+Create a file exactly named `.env` in the same folder and configure it with the AWS server IP and your token:
+
+```env
+# The IP address of the hosted AWS EC2 instance
+AWS_IP=3.111.55.152
+
+# The Auth0 Bearer Token you copied in Step 1
+AUTH0_TOKEN=eyJhbGciOiJSUzI1NiIs...
+```
+
+---
+
+## Step 3: Configure Claude Desktop
+
+Tell Claude where to find your bridge script and virtual environment.
+
+Open the Claude Desktop configuration file:
+
+**Windows**
+
+```
+%APPDATA%\Claude\claude_desktop_config.json
+```
+
+**Mac**
+
+```
+~/Library/Application Support/Claude/claude_desktop_config.json
+```
+
+Add the AWS server configuration (ensure you use absolute paths):
+
+```json
+{
+  "mcpServers": {
+    "aws_expense_tracker": {
+      "command": "C:\\path\\to\\your\\folder\\.venv\\Scripts\\python.exe",
+      "args": [
+        "C:\\path\\to\\your\\folder\\mcp_bridge.py"
+      ]
+    }
+  }
+}
+```
+
+*(Mac/Linux Users: Your command path will look like `/path/to/.venv/bin/python`.)*
+
+Completely Quit (from the system tray) and restart Claude Desktop.
+
+---
+
+# Available MCP Tools
+
+You are connected! Open a chat in Claude and try these natural language prompts:
+
+### Logging
+
+> "Log a $14.50 expense for food (Lunch at Chipotle)."
+
+### Querying
+
+> "List my 5 most recent expenses."
+
+### Analytics
+
+> "What is my total spending for June 2026?"
+
+### Breakdowns
+
+> "Give me a category breakdown of my expenses for this month."
+
+### Modifying
+
+> "Delete the $14.50 food expense I just added."
+
+---
+
+# Admin Guide: Self-Hosting the AWS Backend
+
+If you want to fork this project and deploy your own AWS instance, here is how to spin up the infrastructure.
+
+## Prerequisites
+
+- An AWS EC2 instance (Ubuntu/Debian recommended) with ports **8000 (API)** and **5432 (Postgres, optional)** open in the Security Group.
+- Docker and Docker Compose installed on the host machine.
+- A free Auth0 account (Domain, Audience, and Client ID).
+
+---
+
+## Backend Environment Configuration
+
+Create a `.env` file in the root of the server project:
+
+```env
+# Database Configuration
+DB_USER=postgres
+DB_PASSWORD=your_super_secret_password
+DB_NAME=expense_tracker
+DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+
+# Auth0 Security Parameters
+AUTH0_DOMAIN=your-tenant.us.auth0.com
+AUTH0_AUDIENCE=https://api.expense-tracker.mcp
+
+# Redis Configuration (Local to Docker network)
+REDIS_URL=redis://redis:6379
+```
+
+---
+
+## Deployment
+
+Use Docker Compose to build and start the API, PostgreSQL, and Redis containers simultaneously.
+
+```bash
+docker-compose up --build -d
+```
+
+The server will boot on port **8000**. The FastAPI lifespan event will automatically initialize the database schemas, create the restricted `api_user` role, and enforce the Row-Level Security policies on startup, requiring no manual SQL configuration.
+
+---
+
+Developed by **Keshav Verma**
