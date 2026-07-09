@@ -30,7 +30,9 @@ This project allows developers to connect AI assistants (like Claude Desktop) di
 | **Infrastructure** | ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white) ![Docker Compose](https://img.shields.io/badge/Docker%20Compose-2496ED?logo=docker&logoColor=white) ![AWS EC2](https://img.shields.io/badge/AWS%20EC2-FF9900?logo=amazon-ec2&logoColor=white) |
 | **Protocol** | FastMCP (Model Context Protocol) |
 
-
+## Screenshots showing the mcp server connected to Claude Desktop (MCP Client)
+<img width="1271" height="695" alt="image" src="https://github.com/user-attachments/assets/10583740-50f6-4bf4-86e1-fad06ec4f8d9" />
+<img width="863" height="823" alt="image" src="https://github.com/user-attachments/assets/c1139c92-b7f9-44ab-9cd2-1aa82b2918d5" />
 
 
 
